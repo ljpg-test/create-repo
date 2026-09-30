@@ -125,15 +125,6 @@ select:disabled { opacity: .6; }
 .alert a { color: inherit; font-weight: 600; }
 
 /* Panel lateral */
-.empty { color: var(--text-muted); font-size: 14px; }
-.details { margin: 0; display: grid; gap: 12px; }
-.details div { display: grid; gap: 2px; }
-.details dt { font-size: 12px; color: var(--text-muted); }
-.details dd { margin: 0; font-size: 14px; word-break: break-word; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { padding: 2px 8px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); font-size: 12px; font-weight: 500; }
-.badge { display: inline-block; padding: 1px 8px; border-radius: 6px; background: var(--primary); color: #fff; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-
 .steps { margin: 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 14px; }
 .steps li { counter-increment: step; display: grid; grid-template-columns: 28px 1fr; column-gap: 12px; font-size: 14px; }
 .steps li::before {

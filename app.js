@@ -58,7 +58,7 @@ async function loadWorkspaces() {
       group.label = envName.toUpperCase();
       for (const ws of (env && env.workspaces) || []) {
         const value = `${envName}/${ws.name}`;
-        workspaces.set(value, { ...ws, ambiente: envName, repos_dir: env.repos_dir });
+        workspaces.set(value, { ambiente: envName, name: ws.name });
         group.appendChild(new Option(ws.name, value));
         for (const repo of ws.equipos || []) existingRepos.add(String(repo).toLowerCase());
       }
@@ -69,24 +69,6 @@ async function loadWorkspaces() {
     workspaceSelect.innerHTML = '<option value="">No se pudo cargar workspace.yml</option>';
     showAlert('danger', `Error al leer <code>workspace.yml</code>: ${escapeHtml(err.message)}`);
   }
-}
-
-function renderWorkspace() {
-  const ws = workspaces.get(workspaceSelect.value);
-  $('ws-empty').hidden = Boolean(ws);
-  $('ws-details').hidden = !ws;
-  if (!ws) return;
-
-  const chips = (items, empty) => items.length
-    ? `<span class="chips">${items.map((i) => `<span class="chip">${escapeHtml(i)}</span>`).join('')}</span>`
-    : `<span class="empty">${empty}</span>`;
-
-  $('ws-env').innerHTML = `<span class="badge">${escapeHtml(ws.ambiente)}</span>`;
-  $('ws-appid').textContent = ws.AppId || '—';
-  $('ws-catalog').textContent = ws.catalog || '—';
-  $('ws-dir').textContent = ws.repos_dir || '—';
-  $('ws-repos').innerHTML = chips(ws.equipos || [], 'Ninguno todavía');
-  $('ws-teams').innerHTML = chips(ws.github_teams || [], 'Sin equipos configurados');
 }
 
 function validateName() {
@@ -161,7 +143,6 @@ suffixInput.addEventListener('input', updateNamePreview);
 workspaceSelect.addEventListener('change', () => {
   workspaceSelect.classList.remove('is-invalid');
   $('workspace-error').hidden = true;
-  renderWorkspace();
 });
 purposeInput.addEventListener('input', () => {
   purposeInput.classList.remove('is-invalid');
