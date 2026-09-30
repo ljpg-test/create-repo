@@ -18,7 +18,7 @@ Utilitario para crear repositorios `Data-dbs-*` / `lib-dbs-*` desde una plantill
 | Dónde | Nombre | Valor |
 |---|---|---|
 | Settings → Environments | `creacion` | Activar **Required reviewers** y agregar la cuenta de GitHub que debe aprobar (recibe el correo en la dirección de esa cuenta). |
-| Settings → Secrets → Actions | `ORG_ADMIN_TOKEN` | PAT (o token de GitHub App) con permiso para crear repositorios en la organización destino y administrar los permisos de equipos sobre repositorios (`repo` + `admin:org`). |
+| Settings → Secrets → Actions | `ORG_ADMIN_TOKEN` | PAT classic con scopes `repo` y `admin:org` (crear repositorios y asignar permisos de equipos en la organización destino). Pega solo el valor (`ghp_...`), sin espacios ni saltos de línea. Si el token vence, actualiza el secreto. |
 | Settings → Variables → Actions | `TEMPLATE_REPO` | Repositorio plantilla, `owner/nombre` (o solo `nombre` si está en la organización destino). Debe estar marcado como *Template repository*. |
 | Settings → Variables → Actions | `TARGET_ORG` *(opcional)* | Organización donde se crean los repositorios. Por defecto, el dueño de este repositorio. |
 | Settings → Variables → Actions | `NEW_REPO_VISIBILITY` *(opcional)* | `public` para repos públicos; cualquier otro valor o vacío = privado. |

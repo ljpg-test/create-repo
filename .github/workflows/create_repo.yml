@@ -42,6 +42,24 @@ jobs:
     name: Validaciones de seguridad y duplicidad
     runs-on: ubuntu-latest
     steps:
+      - name: Verificar el secreto ORG_ADMIN_TOKEN
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::El secreto ORG_ADMIN_TOKEN no existe o está vacío (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+          if [[ "$GH_TOKEN" =~ [[:space:]] ]]; then
+            echo "::error::ORG_ADMIN_TOKEN contiene espacios o saltos de línea. Vuelve a pegar solo el valor del token."
+            exit 1
+          fi
+          if ! login=$(gh api user --jq .login 2>&1); then
+            echo "::error::GitHub rechazó ORG_ADMIN_TOKEN ($login). Está vencido, revocado o mal copiado: genera un token nuevo y actualiza el secreto."
+            exit 1
+          fi
+          echo "Token válido (usuario: $login)."
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
