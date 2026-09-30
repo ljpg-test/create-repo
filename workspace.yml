@@ -12,3 +12,4 @@ environments:
         equipos:
           - Data-dbs-test
           - lib-dbs-mlops-mcp-tools
+          - Data-dbs-test-creacion
