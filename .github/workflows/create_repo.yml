@@ -1,0 +1,150 @@
+name: Crear repositorio
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_name:
+        description: "Nombre del repositorio (Data-dbs-* o lib-dbs-*)"
+        required: true
+        type: string
+      ambiente:
+        description: "Ambiente de workspace.yml (dsr, crt, prd)"
+        required: true
+        type: string
+      workspace:
+        description: "Nombre del workspace dentro del ambiente"
+        required: true
+        type: string
+      proposito:
+        description: "Uso que se le dará al repositorio"
+        required: true
+        type: string
+
+# Una ejecución a la vez: evita que dos solicitudes editen workspace.yml en paralelo.
+concurrency:
+  group: create-repo
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# Los inputs se pasan siempre por variables de entorno (nunca interpolados en el
+# script) para evitar inyección de comandos.
+env:
+  REPO_NAME: ${{ inputs.repo_name }}
+  AMBIENTE: ${{ inputs.ambiente }}
+  WORKSPACE: ${{ inputs.workspace }}
+  PROPOSITO: ${{ inputs.proposito }}
+  ORG: ${{ vars.TARGET_ORG || github.repository_owner }}
+
+jobs:
+  validar:
+    name: Validaciones de seguridad y duplicidad
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: pip install -r scripts/requirements.txt
+
+      - name: Validar formato del nombre
+        run: |
+          if [[ ! "$REPO_NAME" =~ ^(Data-dbs-|lib-dbs-)[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::'$REPO_NAME' debe empezar por Data-dbs- o lib-dbs- y solo usar letras, números, '.', '_' o '-'."
+            exit 1
+          fi
+          if (( ${#REPO_NAME} > 100 )); then
+            echo "::error::El nombre supera los 100 caracteres permitidos por GitHub."
+            exit 1
+          fi
+
+      - name: Validar que el repositorio no exista en GitHub
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+        run: |
+          if out=$(gh api "repos/$ORG/$REPO_NAME" --jq .full_name 2>&1); then
+            echo "::error::El repositorio $out ya existe en GitHub."
+            exit 1
+          elif ! grep -q "HTTP 404" <<<"$out"; then
+            echo "::error::No se pudo consultar GitHub: $out"
+            exit 1
+          fi
+          echo "OK: $ORG/$REPO_NAME no existe."
+
+      - name: Validar workspace.yml
+        run: python scripts/workspace_repos.py check --ambiente "$AMBIENTE" --workspace "$WORKSPACE" --repo "$REPO_NAME"
+
+  crear:
+    name: Crear repositorio y actualizar workspace.yml
+    needs: validar
+    runs-on: ubuntu-latest
+    # Los revisores obligatorios de este environment reciben un correo y deben
+    # aprobar antes de que el job empiece.
+    environment: creacion
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: pip install -r scripts/requirements.txt
+
+      # workspace.yml pudo cambiar mientras se esperaba la aprobación.
+      - name: Revalidar workspace.yml
+        run: python scripts/workspace_repos.py check --ambiente "$AMBIENTE" --workspace "$WORKSPACE" --repo "$REPO_NAME"
+
+      - name: Crear repositorio desde la plantilla
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+          TEMPLATE_REPO: ${{ vars.TEMPLATE_REPO }}
+          PRIVATE: ${{ vars.NEW_REPO_VISIBILITY != 'public' }}
+        run: |
+          if [[ -z "$TEMPLATE_REPO" ]]; then
+            echo "::error::Falta la variable de repositorio TEMPLATE_REPO (owner/nombre de la plantilla)."
+            exit 1
+          fi
+          [[ "$TEMPLATE_REPO" == */* ]] || TEMPLATE_REPO="$ORG/$TEMPLATE_REPO"
+          description=$(tr '\r\n' '  ' <<<"$PROPOSITO")
+          description="${description:0:350}"
+
+          gh api -X POST "repos/$TEMPLATE_REPO/generate" \
+            -f owner="$ORG" \
+            -f name="$REPO_NAME" \
+            -f description="$description" \
+            -F private="$PRIVATE" \
+            --jq '"Creado: " + .html_url'
+
+      - name: Asignar permisos a los equipos del workspace
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+          TEAM_PERMISSION: ${{ vars.TEAM_PERMISSION || 'push' }}
+        run: |
+          mapfile -t teams < <(python scripts/workspace_repos.py teams --ambiente "$AMBIENTE" --workspace "$WORKSPACE")
+          if (( ${#teams[@]} == 0 )); then
+            echo "::warning::El workspace '$WORKSPACE' no tiene github_teams; no se asignaron permisos."
+            exit 0
+          fi
+          for team in "${teams[@]}"; do
+            gh api -X PUT "orgs/$ORG/teams/$team/repos/$ORG/$REPO_NAME" -f permission="$TEAM_PERMISSION" --silent
+            echo "Permiso '$TEAM_PERMISSION' asignado a $ORG/$team"
+          done
+
+      - name: Insertar el repositorio en workspace.yml
+        run: python scripts/workspace_repos.py add --ambiente "$AMBIENTE" --workspace "$WORKSPACE" --repo "$REPO_NAME"
+
+      - name: Commit y push de workspace.yml
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add workspace.yml
+          git commit -m "Agregar $REPO_NAME a $AMBIENTE/$WORKSPACE" -m "Solicitado por @$GITHUB_ACTOR: $PROPOSITO"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"

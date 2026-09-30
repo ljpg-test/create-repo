@@ -1,0 +1,14 @@
+environments:
+  dsr:
+    repos_dir: Develop
+    workspaces:
+      - name: Workspace_InnovDataAnalytics_UC
+        url: https://adb-4338220077782810.10.azuredatabricks.net
+        token: DATABRICKS_UC_DSR_TOKEN_INNOVA_DATA
+        AppId: BCI0000810
+        catalog: catalog_bcidigital_innovdataanalytics_dsr_001
+        # Slugs de los equipos de GitHub que reciben permiso de escritura en los repos nuevos.
+        github_teams: []
+        equipos:
+          - Data-dbs-test
+          - lib-dbs-mlops-mcp-tools
