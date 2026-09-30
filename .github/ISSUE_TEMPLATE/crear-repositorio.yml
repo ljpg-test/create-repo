@@ -1,0 +1,37 @@
+name: Crear repositorio
+description: Solicita la creación de un repositorio desde la plantilla y su registro en workspace.yml.
+title: "[Crear repositorio] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Normalmente este formulario se rellena desde la página del utilitario. Al crear el issue se inicia el workflow **Crear repositorio**; la creación queda pendiente de aprobación en el environment `creacion`.
+  - type: input
+    id: repo_name
+    attributes:
+      label: Nombre del repositorio
+      description: Debe comenzar por Data-dbs- o lib-dbs-.
+      placeholder: Data-dbs-proyectos_nuevos
+    validations:
+      required: true
+  - type: input
+    id: ambiente
+    attributes:
+      label: Ambiente
+      description: Clave del ambiente en workspace.yml (dsr, crt, prd).
+    validations:
+      required: true
+  - type: input
+    id: workspace
+    attributes:
+      label: Workspace
+      description: Nombre exacto del workspace en workspace.yml.
+    validations:
+      required: true
+  - type: textarea
+    id: proposito
+    attributes:
+      label: Uso del repositorio
+      description: Se usa como descripción del repositorio (máx. 350 caracteres).
+    validations:
+      required: true

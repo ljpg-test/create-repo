@@ -4,61 +4,90 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Creación de Repositorios</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-  <style>
-    body { background: linear-gradient(160deg, #eef2f7 0%, #dde5f0 100%); min-height: 100vh; }
-    .card { border: 0; border-radius: 1rem; box-shadow: 0 10px 30px rgba(20, 40, 80, .12); }
-    .card-header { background: #1f3b64; color: #fff; border-radius: 1rem 1rem 0 0 !important; }
-    .form-text code { color: #1f3b64; }
-  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="container py-5" style="max-width: 720px;">
-    <div class="card">
-      <div class="card-header p-4">
-        <h1 class="h4 mb-1">Creación de repositorios</h1>
-        <p class="mb-0 opacity-75 small">Crea un repositorio desde la plantilla y lo registra en <code class="text-white">workspace.yml</code>.</p>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M12 7v7M8.5 10.5h7"/></svg>
+        <span>Data Platform <strong>· Repositorios</strong></span>
       </div>
+      <a class="topbar-link" id="actions-link" target="_blank" rel="noopener">Ver ejecuciones ↗</a>
+    </div>
+  </header>
 
-      <div class="card-body p-4">
-        <div id="alert" class="alert d-none" role="alert"></div>
+  <main class="page">
+    <section class="intro">
+      <p class="eyebrow">Autoservicio</p>
+      <h1>Crear un repositorio</h1>
+      <p class="lead">Genera un repositorio desde la plantilla oficial, asigna permisos a los equipos del workspace y lo registra en <code>workspace.yml</code>.</p>
+    </section>
 
-        <form id="repo-form" novalidate>
-          <div class="mb-3">
-            <label for="repo-name" class="form-label">Nombre del repositorio</label>
-            <input type="text" class="form-control" id="repo-name" placeholder="Data-dbs-proyectos_nuevos" required autocomplete="off">
-            <div class="form-text">Debe comenzar por <code>Data-dbs-</code> o <code>lib-dbs-</code>.</div>
-            <div class="invalid-feedback" id="repo-name-error"></div>
-          </div>
+    <div class="layout">
+      <form id="repo-form" class="card" novalidate>
+        <div id="alert" class="alert" role="alert" hidden></div>
 
-          <div class="mb-3">
-            <label for="workspace" class="form-label">Workspace donde va a estar configurado</label>
-            <select class="form-select" id="workspace" required disabled>
-              <option value="">Cargando workspace.yml…</option>
+        <div class="field">
+          <label for="repo-suffix">Nombre del repositorio</label>
+          <div class="name-group" id="name-group">
+            <select id="repo-prefix" aria-label="Prefijo">
+              <option value="Data-dbs-">Data-dbs-</option>
+              <option value="lib-dbs-">lib-dbs-</option>
             </select>
-            <div class="invalid-feedback">Selecciona un workspace.</div>
+            <input type="text" id="repo-suffix" placeholder="proyectos_nuevos" autocomplete="off" spellcheck="false" required>
           </div>
+          <p class="hint" id="name-hint">Usa letras, números, <code>.</code> <code>_</code> o <code>-</code>. Nombre final: <code>Data-dbs-…</code></p>
+        </div>
 
-          <div class="mb-3">
-            <label for="purpose" class="form-label">Uso / propósito del repositorio</label>
-            <textarea class="form-control" id="purpose" rows="3" maxlength="350" required></textarea>
-            <div class="form-text">Se usará como descripción del repositorio (máx. 350 caracteres).</div>
-            <div class="invalid-feedback">Describe el uso del repositorio.</div>
-          </div>
+        <div class="field">
+          <label for="workspace">Workspace</label>
+          <select id="workspace" required disabled>
+            <option value="">Cargando workspace.yml…</option>
+          </select>
+          <p class="hint error-text" id="workspace-error" hidden>Selecciona un workspace.</p>
+        </div>
 
-          <div class="mb-4">
-            <label for="pat" class="form-label">Personal Access Token (PAT)</label>
-            <input type="password" class="form-control" id="pat" required autocomplete="off">
-            <div class="form-text">Token de GitHub con scopes <code>repo</code> y <code>workflow</code>. No se guarda.</div>
-            <div class="invalid-feedback">Ingresa tu token de GitHub.</div>
-          </div>
+        <div class="field">
+          <label for="purpose">Uso del repositorio <span class="counter" id="purpose-counter">0 / 350</span></label>
+          <textarea id="purpose" rows="4" maxlength="350" placeholder="Ej.: Pipelines de ingesta para el modelo de riesgo de clientes." required></textarea>
+          <p class="hint error-text" id="purpose-error" hidden>Describe para qué se usará el repositorio.</p>
+        </div>
 
-          <button type="submit" class="btn btn-primary w-100" id="submit-btn">
-            <span class="spinner-border spinner-border-sm d-none me-2" id="spinner" aria-hidden="true"></span>
-            Crear Repositorio
-          </button>
-        </form>
-      </div>
+        <button type="submit" class="btn-primary" id="submit-btn">
+          Continuar en GitHub
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+        </button>
+        <p class="footnote">Se abrirá GitHub con la solicitud ya completada; solo confirma con <strong>Create</strong>. No necesitas ningún token: el proceso usa las credenciales configuradas en el repositorio.</p>
+      </form>
+
+      <aside class="side">
+        <section class="card card-muted">
+          <h2>Workspace seleccionado</h2>
+          <div id="ws-empty" class="empty">Elige un workspace para ver su configuración.</div>
+          <dl id="ws-details" class="details" hidden>
+            <div><dt>Ambiente</dt><dd id="ws-env"></dd></div>
+            <div><dt>App ID</dt><dd id="ws-appid"></dd></div>
+            <div><dt>Catálogo</dt><dd id="ws-catalog" class="mono"></dd></div>
+            <div><dt>Directorio</dt><dd id="ws-dir" class="mono"></dd></div>
+            <div><dt>Repositorios</dt><dd id="ws-repos"></dd></div>
+            <div><dt>Equipos con acceso</dt><dd id="ws-teams"></dd></div>
+          </dl>
+        </section>
+
+        <section class="card card-muted">
+          <h2>Proceso</h2>
+          <ol class="steps">
+            <li><strong>Solicitud</strong><span>Confirmas el issue en GitHub.</span></li>
+            <li><strong>Validación</strong><span>Nomenclatura y que el nombre no exista en GitHub ni en <code>workspace.yml</code>.</span></li>
+            <li><strong>Aprobación</strong><span>El aprobador recibe un correo y autoriza en el environment <code>creacion</code>.</span></li>
+            <li><strong>Creación</strong><span>Repositorio desde la plantilla, permisos y registro en <code>workspace.yml</code>.</span></li>
+          </ol>
+        </section>
+      </aside>
     </div>
   </main>
 

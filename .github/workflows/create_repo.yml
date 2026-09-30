@@ -1,6 +1,11 @@
 name: Crear repositorio
 
+# Dos entradas: el issue form "Crear repositorio" (lo que usa la página) o
+# ejecución manual desde la pestaña Actions. En ambos casos toda la operación
+# con la organización usa el secreto ORG_ADMIN_TOKEN.
 on:
+  issues:
+    types: [opened]
   workflow_dispatch:
     inputs:
       repo_name:
@@ -20,27 +25,77 @@ on:
         required: true
         type: string
 
-# Una ejecución a la vez: evita que dos solicitudes editen workspace.yml en paralelo.
-concurrency:
-  group: create-repo
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
-# Los inputs se pasan siempre por variables de entorno (nunca interpolados en el
-# script) para evitar inyección de comandos.
-env:
-  REPO_NAME: ${{ inputs.repo_name }}
-  AMBIENTE: ${{ inputs.ambiente }}
-  WORKSPACE: ${{ inputs.workspace }}
-  PROPOSITO: ${{ inputs.proposito }}
-  ORG: ${{ vars.TARGET_ORG || github.repository_owner }}
-
+# Los datos de la solicitud se pasan siempre por variables de entorno (nunca
+# interpolados con ${{ }} dentro de run:) para evitar inyección de comandos.
 jobs:
+  preparar:
+    name: Leer la solicitud
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[Crear repositorio]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      repo_name: ${{ steps.datos.outputs.repo_name }}
+      ambiente: ${{ steps.datos.outputs.ambiente }}
+      workspace: ${{ steps.datos.outputs.workspace }}
+      proposito: ${{ steps.datos.outputs.proposito }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar que el solicitante pertenezca a la organización
+        if: github.event_name == 'issues'
+        env:
+          ASSOCIATION: ${{ github.event.issue.author_association }}
+        run: |
+          case "$ASSOCIATION" in
+            OWNER|MEMBER|COLLABORATOR) echo "Solicitante autorizado ($ASSOCIATION)." ;;
+            *) echo "::error::Solo miembros o colaboradores pueden solicitar repositorios ($ASSOCIATION)."; exit 1 ;;
+          esac
+
+      - name: Extraer los datos
+        id: datos
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          IN_REPO_NAME: ${{ inputs.repo_name }}
+          IN_AMBIENTE: ${{ inputs.ambiente }}
+          IN_WORKSPACE: ${{ inputs.workspace }}
+          IN_PROPOSITO: ${{ inputs.proposito }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "issues" ]]; then
+            python3 scripts/issue_form.py
+          else
+            single_line() { printf '%s' "${1//[$'\r\n']/ }"; }
+            {
+              echo "repo_name=$(single_line "$IN_REPO_NAME")"
+              echo "ambiente=$(single_line "$IN_AMBIENTE")"
+              echo "workspace=$(single_line "$IN_WORKSPACE")"
+              echo "proposito=$(single_line "$IN_PROPOSITO")"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Confirmar recepción en el issue
+        if: github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue comment "$ISSUE" --body "⏳ Solicitud recibida. Tras las validaciones quedará pendiente de aprobación en el environment \`creacion\`. [Ver ejecución]($RUN_URL)"
+
   validar:
     name: Validaciones de seguridad y duplicidad
+    needs: preparar
     runs-on: ubuntu-latest
+    env:
+      REPO_NAME: ${{ needs.preparar.outputs.repo_name }}
+      AMBIENTE: ${{ needs.preparar.outputs.ambiente }}
+      WORKSPACE: ${{ needs.preparar.outputs.workspace }}
+      ORG: ${{ vars.TARGET_ORG || github.repository_owner }}
     steps:
       - name: Verificar el secreto ORG_ADMIN_TOKEN
         env:
@@ -98,13 +153,19 @@ jobs:
 
   crear:
     name: Crear repositorio y actualizar workspace.yml
-    needs: validar
+    needs: [preparar, validar]
     runs-on: ubuntu-latest
     # Los revisores obligatorios de este environment reciben un correo y deben
     # aprobar antes de que el job empiece.
     environment: creacion
     permissions:
       contents: write
+    env:
+      REPO_NAME: ${{ needs.preparar.outputs.repo_name }}
+      AMBIENTE: ${{ needs.preparar.outputs.ambiente }}
+      WORKSPACE: ${{ needs.preparar.outputs.workspace }}
+      PROPOSITO: ${{ needs.preparar.outputs.proposito }}
+      ORG: ${{ vars.TARGET_ORG || github.repository_owner }}
     steps:
       - uses: actions/checkout@v4
 
@@ -130,13 +191,11 @@ jobs:
             exit 1
           fi
           [[ "$TEMPLATE_REPO" == */* ]] || TEMPLATE_REPO="$ORG/$TEMPLATE_REPO"
-          description=$(tr '\r\n' '  ' <<<"$PROPOSITO")
-          description="${description:0:350}"
 
           gh api -X POST "repos/$TEMPLATE_REPO/generate" \
             -f owner="$ORG" \
             -f name="$REPO_NAME" \
-            -f description="$description" \
+            -f description="${PROPOSITO:0:350}" \
             -F private="$PRIVATE" \
             --jq '"Creado: " + .html_url'
 
@@ -155,14 +214,50 @@ jobs:
             echo "Permiso '$TEAM_PERMISSION' asignado a $ORG/$team"
           done
 
-      - name: Insertar el repositorio en workspace.yml
-        run: python scripts/workspace_repos.py add --ambiente "$AMBIENTE" --workspace "$WORKSPACE" --repo "$REPO_NAME"
-
-      - name: Commit y push de workspace.yml
+      # Si otra ejecución publicó cambios en paralelo, se parte de nuevo de la
+      # rama remota y se reinserta; el script garantiza que quede una sola vez.
+      - name: Insertar en workspace.yml, commit y push
+        env:
+          ACTOR: ${{ github.event.issue.user.login || github.actor }}
+          BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add workspace.yml
-          git commit -m "Agregar $REPO_NAME a $AMBIENTE/$WORKSPACE" -m "Solicitado por @$GITHUB_ACTOR: $PROPOSITO"
-          git pull --rebase origin "$GITHUB_REF_NAME"
-          git push origin "HEAD:$GITHUB_REF_NAME"
+          for attempt in 1 2 3 4 5; do
+            git fetch --quiet origin "$BRANCH"
+            git reset --quiet --hard "origin/$BRANCH"
+            python scripts/workspace_repos.py add --ambiente "$AMBIENTE" --workspace "$WORKSPACE" --repo "$REPO_NAME"
+            git add workspace.yml
+            git commit --quiet -m "Agregar $REPO_NAME a $AMBIENTE/$WORKSPACE" -m "Solicitado por @$ACTOR: $PROPOSITO"
+            if git push origin "HEAD:$BRANCH"; then
+              exit 0
+            fi
+            echo "Push rechazado (intento $attempt); reintentando…"
+            sleep $((attempt * 5))
+          done
+          echo "::error::No se pudo publicar workspace.yml; el repositorio ya fue creado y debe registrarse a mano."
+          exit 1
+
+  notificar:
+    name: Informar el resultado en el issue
+    needs: [preparar, validar, crear]
+    if: always() && github.event_name == 'issues' && needs.preparar.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+          RESULT: ${{ needs.crear.result }}
+          REPO_URL: ${{ github.server_url }}/${{ vars.TARGET_ORG || github.repository_owner }}/${{ needs.preparar.outputs.repo_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ "$RESULT" == "success" ]]; then
+            gh issue comment "$ISSUE" --body "✅ Repositorio creado: $REPO_URL"
+            gh issue close "$ISSUE" --reason completed
+          else
+            gh issue comment "$ISSUE" --body "❌ La solicitud no se completó (validación fallida o creación rechazada). [Ver detalle]($RUN_URL)"
+            gh issue close "$ISSUE" --reason "not planned"
+          fi

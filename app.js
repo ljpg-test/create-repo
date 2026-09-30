@@ -1,39 +1,49 @@
-// Repositorio orquestador que contiene create_repo.yml. En GitHub Pages
-// (<owner>.github.io/<repo>/) se deduce de la URL; si no, se usan los valores fijos.
+// Repositorio orquestador (contiene el issue form y create_repo.yml). En GitHub
+// Pages (<owner>.github.io/<repo>/) se deduce de la URL; si no, se usan los valores fijos.
 const CONFIG = (() => {
-  const fallback = { owner: 'ljpgluisjop', repo: 'create-repo' };
+  const fallback = { owner: 'ljpg-test', repo: 'create-repo' };
   const host = window.location.hostname;
   const firstPath = window.location.pathname.split('/').filter(Boolean)[0];
   const detected = host.endsWith('.github.io') && firstPath
     ? { owner: host.replace('.github.io', ''), repo: firstPath }
     : fallback;
-  return { ...detected, workflowFile: 'create_repo.yml', ref: 'main' };
+  return { ...detected, issueTemplate: 'crear-repositorio.yml', workflowFile: 'create_repo.yml' };
 })();
 
 const REPO_NAME_RE = /^(Data-dbs-|lib-dbs-)[A-Za-z0-9._-]+$/;
+const SUFFIX_RE = /^[A-Za-z0-9._-]+$/;
 
-const form = document.getElementById('repo-form');
-const repoInput = document.getElementById('repo-name');
-const repoError = document.getElementById('repo-name-error');
-const workspaceSelect = document.getElementById('workspace');
-const purposeInput = document.getElementById('purpose');
-const patInput = document.getElementById('pat');
-const submitBtn = document.getElementById('submit-btn');
-const spinner = document.getElementById('spinner');
-const alertBox = document.getElementById('alert');
+const $ = (id) => document.getElementById(id);
+const form = $('repo-form');
+const prefixSelect = $('repo-prefix');
+const suffixInput = $('repo-suffix');
+const nameGroup = $('name-group');
+const nameHint = $('name-hint');
+const workspaceSelect = $('workspace');
+const purposeInput = $('purpose');
+const alertBox = $('alert');
 
-// Repositorios ya registrados en workspace.yml (en minúsculas) para avisar antes de disparar el workflow.
+const repoBase = `https://github.com/${CONFIG.owner}/${CONFIG.repo}`;
+$('actions-link').href = `${repoBase}/actions/workflows/${CONFIG.workflowFile}`;
+
+// Workspaces indexados por el value del <select>, y repositorios ya registrados (en minúsculas).
+const workspaces = new Map();
 let existingRepos = new Set();
 
 function showAlert(type, html) {
-  alertBox.className = `alert alert-${type}`;
+  alertBox.className = `alert ${type}`;
   alertBox.innerHTML = html;
+  alertBox.hidden = false;
 }
 
 function escapeHtml(text) {
   const div = document.createElement('div');
-  div.textContent = text;
+  div.textContent = String(text);
   return div.innerHTML;
+}
+
+function repoName() {
+  return prefixSelect.value + suffixInput.value.trim();
 }
 
 async function loadWorkspaces() {
@@ -43,16 +53,13 @@ async function loadWorkspaces() {
     const doc = jsyaml.load(await res.text()) || {};
 
     workspaceSelect.innerHTML = '<option value="">Selecciona un workspace…</option>';
-    existingRepos = new Set();
-
     for (const [envName, env] of Object.entries(doc.environments || {})) {
       const group = document.createElement('optgroup');
       group.label = envName.toUpperCase();
       for (const ws of (env && env.workspaces) || []) {
-        const option = document.createElement('option');
-        option.value = JSON.stringify({ ambiente: envName, workspace: ws.name });
-        option.textContent = ws.name;
-        group.appendChild(option);
+        const value = `${envName}/${ws.name}`;
+        workspaces.set(value, { ...ws, ambiente: envName, repos_dir: env.repos_dir });
+        group.appendChild(new Option(ws.name, value));
         for (const repo of ws.equipos || []) existingRepos.add(String(repo).toLowerCase());
       }
       if (group.children.length) workspaceSelect.appendChild(group);
@@ -64,87 +71,102 @@ async function loadWorkspaces() {
   }
 }
 
-function validateRepoName(name) {
-  if (!name) return 'Ingresa el nombre del repositorio.';
-  if (!REPO_NAME_RE.test(name)) {
-    return 'Debe comenzar por Data-dbs- o lib-dbs- y solo usar letras, números, ".", "_" o "-".';
-  }
-  if (name.length > 100) return 'GitHub admite como máximo 100 caracteres.';
-  if (existingRepos.has(name.toLowerCase())) return 'Este repositorio ya figura en workspace.yml.';
-  return '';
+function renderWorkspace() {
+  const ws = workspaces.get(workspaceSelect.value);
+  $('ws-empty').hidden = Boolean(ws);
+  $('ws-details').hidden = !ws;
+  if (!ws) return;
+
+  const chips = (items, empty) => items.length
+    ? `<span class="chips">${items.map((i) => `<span class="chip">${escapeHtml(i)}</span>`).join('')}</span>`
+    : `<span class="empty">${empty}</span>`;
+
+  $('ws-env').innerHTML = `<span class="badge">${escapeHtml(ws.ambiente)}</span>`;
+  $('ws-appid').textContent = ws.AppId || '—';
+  $('ws-catalog').textContent = ws.catalog || '—';
+  $('ws-dir').textContent = ws.repos_dir || '—';
+  $('ws-repos').innerHTML = chips(ws.equipos || [], 'Ninguno todavía');
+  $('ws-teams').innerHTML = chips(ws.github_teams || [], 'Sin equipos configurados');
+}
+
+function validateName() {
+  const suffix = suffixInput.value.trim();
+  const name = repoName();
+  let error = '';
+  if (!suffix) error = 'Ingresa el nombre del repositorio.';
+  else if (!SUFFIX_RE.test(suffix) || !REPO_NAME_RE.test(name)) error = 'Solo se permiten letras, números, ".", "_" o "-".';
+  else if (name.length > 100) error = 'GitHub admite como máximo 100 caracteres.';
+  else if (existingRepos.has(name.toLowerCase())) error = 'Este repositorio ya figura en workspace.yml.';
+  return error;
+}
+
+function updateNamePreview() {
+  const preview = suffixInput.value.trim() ? repoName() : `${prefixSelect.value}…`;
+  nameGroup.classList.remove('is-invalid');
+  nameHint.classList.remove('error-text');
+  nameHint.innerHTML = `Usa letras, números, <code>.</code> <code>_</code> o <code>-</code>. Nombre final: <code>${escapeHtml(preview)}</code>`;
 }
 
 function validateForm() {
-  let valid = true;
-  const setValidity = (el, ok) => {
-    el.classList.toggle('is-invalid', !ok);
-    if (!ok) valid = false;
-  };
+  const nameError = validateName();
+  nameGroup.classList.toggle('is-invalid', Boolean(nameError));
+  if (nameError) {
+    nameHint.classList.add('error-text');
+    nameHint.textContent = nameError;
+  }
 
-  const nameError = validateRepoName(repoInput.value.trim());
-  repoError.textContent = nameError;
-  setValidity(repoInput, !nameError);
-  setValidity(workspaceSelect, Boolean(workspaceSelect.value));
-  setValidity(purposeInput, Boolean(purposeInput.value.trim()));
-  setValidity(patInput, Boolean(patInput.value.trim()));
-  return valid;
+  const wsOk = Boolean(workspaceSelect.value);
+  workspaceSelect.classList.toggle('is-invalid', !wsOk);
+  $('workspace-error').hidden = wsOk;
+
+  const purposeOk = Boolean(purposeInput.value.trim());
+  purposeInput.classList.toggle('is-invalid', !purposeOk);
+  $('purpose-error').hidden = purposeOk;
+
+  return !nameError && wsOk && purposeOk;
 }
 
-async function dispatchWorkflow(inputs, token) {
-  const url = `https://api.github.com/repos/${CONFIG.owner}/${CONFIG.repo}/actions/workflows/${CONFIG.workflowFile}/dispatches`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${token}`,
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-    body: JSON.stringify({ ref: CONFIG.ref, inputs }),
+// La solicitud se envía como un issue form prellenado: el usuario confirma con su
+// sesión de GitHub y el workflow usa el secreto ORG_ADMIN_TOKEN, sin tokens en la página.
+function buildIssueUrl() {
+  const ws = workspaces.get(workspaceSelect.value);
+  const name = repoName();
+  const params = new URLSearchParams({
+    template: CONFIG.issueTemplate,
+    title: `[Crear repositorio] ${name}`,
+    repo_name: name,
+    ambiente: ws.ambiente,
+    workspace: ws.name,
+    proposito: purposeInput.value.trim(),
   });
-  if (res.status === 204) return;
-
-  let detail = '';
-  try { detail = (await res.json()).message || ''; } catch { /* respuesta sin cuerpo */ }
-  const hints = {
-    401: 'El token es inválido o expiró.',
-    403: 'El token no tiene permisos suficientes (se requieren los scopes repo y workflow).',
-    404: 'No se encontró el workflow o el token no tiene acceso al repositorio orquestador.',
-    422: 'GitHub rechazó los parámetros enviados.',
-  };
-  throw new Error(`${hints[res.status] || `Error HTTP ${res.status}.`} ${detail}`.trim());
+  return `${repoBase}/issues/new?${params}`;
 }
 
-form.addEventListener('submit', async (event) => {
+form.addEventListener('submit', (event) => {
   event.preventDefault();
-  alertBox.className = 'alert d-none';
+  alertBox.hidden = true;
   if (!validateForm()) return;
 
-  const { ambiente, workspace } = JSON.parse(workspaceSelect.value);
-  const inputs = {
-    repo_name: repoInput.value.trim(),
-    ambiente,
-    workspace,
-    proposito: purposeInput.value.trim(),
-  };
-
-  submitBtn.disabled = true;
-  spinner.classList.remove('d-none');
-  try {
-    await dispatchWorkflow(inputs, patInput.value.trim());
-    const runsUrl = `https://github.com/${CONFIG.owner}/${CONFIG.repo}/actions/workflows/${CONFIG.workflowFile}`;
-    showAlert('success',
-      `Solicitud enviada para <strong>${escapeHtml(inputs.repo_name)}</strong>. ` +
-      'Tras las validaciones, el aprobador del environment <code>creacion</code> recibirá un correo para aprobar la creación. ' +
-      `<a href="${runsUrl}" target="_blank" rel="noopener">Ver la ejecución</a>.`);
-    form.reset();
-  } catch (err) {
-    showAlert('danger', escapeHtml(err.message));
-  } finally {
-    patInput.value = '';
-    submitBtn.disabled = false;
-    spinner.classList.add('d-none');
-  }
+  const url = buildIssueUrl();
+  const opened = window.open(url, '_blank');
+  if (opened) opened.opener = null;
+  showAlert('success',
+    `Se abrió GitHub con la solicitud para <strong>${escapeHtml(repoName())}</strong>. ` +
+    'Confirma con <strong>Create</strong>; el resultado se informará en el mismo issue. ' +
+    (opened ? '' : `Si no se abrió, <a href="${escapeHtml(url)}" target="_blank" rel="noopener">abre la solicitud aquí</a>.`));
 });
 
-repoInput.addEventListener('input', () => repoInput.classList.remove('is-invalid'));
+prefixSelect.addEventListener('change', updateNamePreview);
+suffixInput.addEventListener('input', updateNamePreview);
+workspaceSelect.addEventListener('change', () => {
+  workspaceSelect.classList.remove('is-invalid');
+  $('workspace-error').hidden = true;
+  renderWorkspace();
+});
+purposeInput.addEventListener('input', () => {
+  purposeInput.classList.remove('is-invalid');
+  $('purpose-error').hidden = true;
+  $('purpose-counter').textContent = `${purposeInput.value.length} / 350`;
+});
+
 loadWorkspaces();
