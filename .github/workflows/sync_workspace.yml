@@ -38,7 +38,8 @@ jobs:
           gh api -H "Accept: application/vnd.github.raw" "repos/$WORKSPACE_REPO/contents/$WORKSPACE_FILE$ref" > data/workspace.yml
 
       - name: Generar data/config.json
-        run: jq -n --arg repository "$GITHUB_REPOSITORY" '{repository: $repository}' > data/config.json
+        run: |
+          jq -n --arg repository "$GITHUB_REPOSITORY" '{repository: $repository}' > data/config.json
 
       - name: Publicar si cambió
         run: |
