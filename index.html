@@ -58,20 +58,20 @@
         </div>
 
         <button type="submit" class="btn-primary" id="submit-btn">
-          Continuar en GitHub
+          Crear issue
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
         </button>
-        <p class="footnote">Se abrirá GitHub con la solicitud ya completada; solo confirma con <strong>Create</strong>. No necesitas ningún token: el proceso usa las credenciales configuradas en el repositorio.</p>
+        <p class="footnote">Se abrirá GitHub con el issue ya completado; confírmalo con <strong>Create</strong>. No necesitas ningún token: el proceso usa las credenciales configuradas en el repositorio.</p>
       </form>
 
       <aside class="side">
         <section class="card card-muted">
           <h2>Proceso</h2>
           <ol class="steps">
-            <li><strong>Solicitud</strong><span>Confirmas el issue en GitHub.</span></li>
+            <li><strong>Issue</strong><span>Confirmas el issue en GitHub; queda abierto y asignado al aprobador.</span></li>
             <li><strong>Validación</strong><span>Nomenclatura y que el nombre no exista en GitHub ni en <code>workspace.yml</code>.</span></li>
-            <li><strong>Aprobación</strong><span>El aprobador recibe un correo y autoriza en el environment <code>creacion</code>.</span></li>
-            <li><strong>Creación</strong><span>Repositorio desde la plantilla, permisos y registro en <code>workspace.yml</code>.</span></li>
+            <li><strong>Aprobación</strong><span>El aprobador cierra el issue como <em>Completed</em> y autoriza el environment <code>creacion</code>.</span></li>
+            <li><strong>Creación</strong><span>Repositorio desde la plantilla, permisos y registro en <code>workspace.yml</code>. El resultado se comenta en el issue.</span></li>
           </ol>
         </section>
       </aside>

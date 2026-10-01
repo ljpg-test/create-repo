@@ -1,11 +1,14 @@
 name: Crear repositorio
 
-# Dos entradas: el issue form "Crear repositorio" (lo que usa la página) o
-# ejecución manual desde la pestaña Actions. En ambos casos toda la operación
-# con la organización usa el secreto ORG_ADMIN_TOKEN.
+# Flujo con issue (lo que usa la página):
+#   issue abierto  -> valida, asigna a los aprobadores y queda abierto (no crea nada).
+#   issue cerrado como "Completed" por un aprobador -> revalida y, tras aprobar el
+#   environment "creacion", crea el repositorio. "Not planned" = rechazado.
+# workflow_dispatch valida y crea directamente (también pasa por el environment).
+# Toda operación sobre la organización y sobre workspace.yml usa ORG_ADMIN_TOKEN.
 on:
   issues:
-    types: [opened]
+    types: [opened, closed]
   workflow_dispatch:
     inputs:
       repo_name:
@@ -28,12 +31,21 @@ on:
 permissions:
   contents: read
 
+env:
+  ORG: ${{ vars.TARGET_ORG || github.repository_owner }}
+  WORKSPACE_REPO: ${{ vars.WORKSPACE_REPO || 'ljpg-test/lib-dbs-test-cracion' }}
+  WORKSPACE_FILE: ${{ vars.WORKSPACE_FILE || 'workspace.yml' }}
+  APROBADORES: ${{ vars.APROBADORES || 'ljpgluisjop' }}
+
 # Los datos de la solicitud se pasan siempre por variables de entorno (nunca
 # interpolados con ${{ }} dentro de run:) para evitar inyección de comandos.
 jobs:
   preparar:
     name: Leer la solicitud
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[Crear repositorio]')
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (startsWith(github.event.issue.title, '[Crear repositorio]') &&
+       (github.event.action == 'opened' || github.event.issue.state_reason == 'completed'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -47,7 +59,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Verificar que el solicitante pertenezca a la organización
-        if: github.event_name == 'issues'
+        if: github.event.action == 'opened'
         env:
           ASSOCIATION: ${{ github.event.issue.author_association }}
         run: |
@@ -55,6 +67,17 @@ jobs:
             OWNER|MEMBER|COLLABORATOR) echo "Solicitante autorizado ($ASSOCIATION)." ;;
             *) echo "::error::Solo miembros o colaboradores pueden solicitar repositorios ($ASSOCIATION)."; exit 1 ;;
           esac
+
+      - name: Verificar que quien cerró el issue sea aprobador
+        if: github.event.action == 'closed'
+        env:
+          SENDER: ${{ github.event.sender.login }}
+        run: |
+          if ! tr ', ' '\n\n' <<<"$APROBADORES" | grep -qixF -- "$SENDER"; then
+            echo "::error::@$SENDER no está en APROBADORES ($APROBADORES); el cierre no aprueba la solicitud."
+            exit 1
+          fi
+          echo "Aprobado por @$SENDER."
 
       - name: Extraer los datos
         id: datos
@@ -77,15 +100,16 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Confirmar recepción en el issue
-        if: github.event_name == 'issues'
+      - name: Asignar el issue a los aprobadores
+        if: github.event.action == 'opened'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh issue comment "$ISSUE" --body "⏳ Solicitud recibida. Tras las validaciones quedará pendiente de aprobación en el environment \`creacion\`. [Ver ejecución]($RUN_URL)"
+          for user in $(tr ',' ' ' <<<"$APROBADORES"); do
+            gh issue edit "$ISSUE" --add-assignee "$user" || echo "::warning::No se pudo asignar a @$user (¿tiene acceso al repositorio?)."
+          done
 
   validar:
     name: Validaciones de seguridad y duplicidad
@@ -95,7 +119,6 @@ jobs:
       REPO_NAME: ${{ needs.preparar.outputs.repo_name }}
       AMBIENTE: ${{ needs.preparar.outputs.ambiente }}
       WORKSPACE: ${{ needs.preparar.outputs.workspace }}
-      ORG: ${{ vars.TARGET_ORG || github.repository_owner }}
     steps:
       - name: Verificar el secreto ORG_ADMIN_TOKEN
         env:
@@ -116,6 +139,15 @@ jobs:
           echo "Token válido (usuario: $login)."
 
       - uses: actions/checkout@v4
+
+      - name: Descargar el repositorio de workspace.yml
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.WORKSPACE_REPO }}
+          ref: ${{ vars.WORKSPACE_BRANCH }}
+          token: ${{ secrets.ORG_ADMIN_TOKEN }}
+          path: ws
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -149,25 +181,31 @@ jobs:
           echo "OK: $ORG/$REPO_NAME no existe."
 
       - name: Validar workspace.yml
-        run: python scripts/workspace_repos.py check --ambiente "$AMBIENTE" --workspace "$WORKSPACE" --repo "$REPO_NAME"
+        run: python scripts/workspace_repos.py check --file "ws/$WORKSPACE_FILE" --ambiente "$AMBIENTE" --workspace "$WORKSPACE" --repo "$REPO_NAME"
 
   crear:
     name: Crear repositorio y actualizar workspace.yml
     needs: [preparar, validar]
+    if: github.event_name == 'workflow_dispatch' || github.event.action == 'closed'
     runs-on: ubuntu-latest
-    # Los revisores obligatorios de este environment reciben un correo y deben
-    # aprobar antes de que el job empiece.
+    # Segunda aprobación: los revisores obligatorios de este environment reciben
+    # un correo y deben aprobar antes de que el job empiece.
     environment: creacion
-    permissions:
-      contents: write
     env:
       REPO_NAME: ${{ needs.preparar.outputs.repo_name }}
       AMBIENTE: ${{ needs.preparar.outputs.ambiente }}
       WORKSPACE: ${{ needs.preparar.outputs.workspace }}
       PROPOSITO: ${{ needs.preparar.outputs.proposito }}
-      ORG: ${{ vars.TARGET_ORG || github.repository_owner }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Descargar el repositorio de workspace.yml
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.WORKSPACE_REPO }}
+          ref: ${{ vars.WORKSPACE_BRANCH }}
+          token: ${{ secrets.ORG_ADMIN_TOKEN }}
+          path: ws
 
       - uses: actions/setup-python@v5
         with:
@@ -178,33 +216,45 @@ jobs:
 
       # workspace.yml pudo cambiar mientras se esperaba la aprobación.
       - name: Revalidar workspace.yml
-        run: python scripts/workspace_repos.py check --ambiente "$AMBIENTE" --workspace "$WORKSPACE" --repo "$REPO_NAME"
+        run: python scripts/workspace_repos.py check --file "ws/$WORKSPACE_FILE" --ambiente "$AMBIENTE" --workspace "$WORKSPACE" --repo "$REPO_NAME"
 
       - name: Crear repositorio desde la plantilla
         env:
           GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
           TEMPLATE_REPO: ${{ vars.TEMPLATE_REPO }}
-          PRIVATE: ${{ vars.NEW_REPO_VISIBILITY != 'public' }}
+          VISIBILITY: ${{ vars.NEW_REPO_VISIBILITY || 'private' }}
         run: |
           if [[ -z "$TEMPLATE_REPO" ]]; then
             echo "::error::Falta la variable de repositorio TEMPLATE_REPO (owner/nombre de la plantilla)."
             exit 1
           fi
           [[ "$TEMPLATE_REPO" == */* ]] || TEMPLATE_REPO="$ORG/$TEMPLATE_REPO"
+          case "$VISIBILITY" in
+            public) private=false ;;
+            private|internal) private=true ;;
+            *) echo "::error::NEW_REPO_VISIBILITY debe ser private, internal o public (es '$VISIBILITY')."; exit 1 ;;
+          esac
 
           gh api -X POST "repos/$TEMPLATE_REPO/generate" \
             -f owner="$ORG" \
             -f name="$REPO_NAME" \
             -f description="${PROPOSITO:0:350}" \
-            -F private="$PRIVATE" \
+            -F private="$private" \
             --jq '"Creado: " + .html_url'
+
+          # La API de plantillas solo distingue público/privado; "internal"
+          # (GitHub Enterprise) se aplica después.
+          if [[ "$VISIBILITY" == "internal" ]]; then
+            gh api -X PATCH "repos/$ORG/$REPO_NAME" -f visibility=internal --silent
+            echo "Visibilidad cambiada a internal."
+          fi
 
       - name: Asignar permisos a los equipos del workspace
         env:
           GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
           TEAM_PERMISSION: ${{ vars.TEAM_PERMISSION || 'push' }}
         run: |
-          mapfile -t teams < <(python scripts/workspace_repos.py teams --ambiente "$AMBIENTE" --workspace "$WORKSPACE")
+          mapfile -t teams < <(python scripts/workspace_repos.py teams --file "ws/$WORKSPACE_FILE" --ambiente "$AMBIENTE" --workspace "$WORKSPACE")
           if (( ${#teams[@]} == 0 )); then
             echo "::warning::El workspace '$WORKSPACE' no tiene github_teams; no se asignaron permisos."
             exit 0
@@ -219,24 +269,32 @@ jobs:
       - name: Insertar en workspace.yml, commit y push
         env:
           ACTOR: ${{ github.event.issue.user.login || github.actor }}
-          BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C ws config user.name "github-actions[bot]"
+          git -C ws config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch=$(git -C ws rev-parse --abbrev-ref HEAD)
           for attempt in 1 2 3 4 5; do
-            git fetch --quiet origin "$BRANCH"
-            git reset --quiet --hard "origin/$BRANCH"
-            python scripts/workspace_repos.py add --ambiente "$AMBIENTE" --workspace "$WORKSPACE" --repo "$REPO_NAME"
-            git add workspace.yml
-            git commit --quiet -m "Agregar $REPO_NAME a $AMBIENTE/$WORKSPACE" -m "Solicitado por @$ACTOR: $PROPOSITO"
-            if git push origin "HEAD:$BRANCH"; then
+            git -C ws fetch --quiet origin "$branch"
+            git -C ws reset --quiet --hard "origin/$branch"
+            python scripts/workspace_repos.py add --file "ws/$WORKSPACE_FILE" --ambiente "$AMBIENTE" --workspace "$WORKSPACE" --repo "$REPO_NAME"
+            git -C ws add "$WORKSPACE_FILE"
+            git -C ws commit --quiet -m "Agregar $REPO_NAME a $AMBIENTE/$WORKSPACE" -m "Solicitado por @$ACTOR: $PROPOSITO"
+            if git -C ws push origin "HEAD:$branch"; then
               exit 0
             fi
             echo "Push rechazado (intento $attempt); reintentando…"
             sleep $((attempt * 5))
           done
-          echo "::error::No se pudo publicar workspace.yml; el repositorio ya fue creado y debe registrarse a mano."
+          echo "::error::No se pudo publicar workspace.yml en $WORKSPACE_REPO; el repositorio ya fue creado y debe registrarse a mano."
           exit 1
+
+  publicar:
+    name: Actualizar la copia de workspace.yml de la página
+    needs: crear
+    permissions:
+      contents: write
+    uses: ./.github/workflows/sync_workspace.yml
+    secrets: inherit
 
   notificar:
     name: Informar el resultado en el issue
@@ -250,14 +308,33 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
-          RESULT: ${{ needs.crear.result }}
+          ACTION: ${{ github.event.action }}
+          PREPARAR: ${{ needs.preparar.result }}
+          VALIDAR: ${{ needs.validar.result }}
+          CREAR: ${{ needs.crear.result }}
+          SENDER: ${{ github.event.sender.login }}
           REPO_URL: ${{ github.server_url }}/${{ vars.TARGET_ORG || github.repository_owner }}/${{ needs.preparar.outputs.repo_name }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [[ "$RESULT" == "success" ]]; then
+          approvers=$(tr ', ' '\n\n' <<<"$APROBADORES" | sed '/^$/d; s/^/@/' | paste -sd ' ')
+
+          if [[ "$ACTION" == "opened" ]]; then
+            if [[ "$PREPARAR" == "success" && "$VALIDAR" == "success" ]]; then
+              gh issue comment "$ISSUE" --body "🔎 Solicitud validada. Pendiente de aprobación de $approvers: cerrar el issue como **Completed** aprueba la creación; **Close as not planned** la rechaza. [Ver validación]($RUN_URL)"
+            else
+              gh issue comment "$ISSUE" --body "❌ La solicitud no pasó las validaciones. [Ver detalle]($RUN_URL)"
+              gh issue close "$ISSUE" --reason "not planned"
+            fi
+            exit 0
+          fi
+
+          # ACTION == closed (como completed)
+          if [[ "$PREPARAR" != "success" ]]; then
+            gh issue reopen "$ISSUE"
+            gh issue comment "$ISSUE" --body "⚠️ @$SENDER cerró el issue, pero solo $approvers puede aprobar. Se reabrió. [Ver detalle]($RUN_URL)"
+          elif [[ "$CREAR" == "success" ]]; then
             gh issue comment "$ISSUE" --body "✅ Repositorio creado: $REPO_URL"
-            gh issue close "$ISSUE" --reason completed
           else
-            gh issue comment "$ISSUE" --body "❌ La solicitud no se completó (validación fallida o creación rechazada). [Ver detalle]($RUN_URL)"
-            gh issue close "$ISSUE" --reason "not planned"
+            gh issue reopen "$ISSUE"
+            gh issue comment "$ISSUE" --body "❌ La creación no se completó (validación fallida, environment rechazado o error). Se reabrió el issue. [Ver detalle]($RUN_URL)"
           fi

@@ -1,0 +1,57 @@
+name: Publicar workspace.yml
+
+# Copia workspace.yml del repositorio donde vive (puede ser privado) a
+# data/workspace.yml de este repositorio, que es lo que lee la página. También
+# genera data/config.json con el repositorio orquestador, porque en Pages
+# privado (URL *.pages.github.io aleatoria) o con dominio propio la página no
+# puede deducirlo de su URL.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: sync-workspace
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  WORKSPACE_REPO: ${{ vars.WORKSPACE_REPO || 'ljpg-test/lib-dbs-test-cracion' }}
+  WORKSPACE_FILE: ${{ vars.WORKSPACE_FILE || 'workspace.yml' }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descargar workspace.yml
+        env:
+          GH_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+          WORKSPACE_BRANCH: ${{ vars.WORKSPACE_BRANCH }}
+        run: |
+          ref=${WORKSPACE_BRANCH:+?ref=$WORKSPACE_BRANCH}
+          mkdir -p data
+          gh api -H "Accept: application/vnd.github.raw" "repos/$WORKSPACE_REPO/contents/$WORKSPACE_FILE$ref" > data/workspace.yml
+
+      - name: Generar data/config.json
+        run: jq -n --arg repository "$GITHUB_REPOSITORY" '{repository: $repository}' > data/config.json
+
+      - name: Publicar si cambió
+        run: |
+          git add data/workspace.yml data/config.json
+          if git diff --cached --quiet; then
+            echo "Sin cambios."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --quiet -m "Actualizar copia de $WORKSPACE_REPO/$WORKSPACE_FILE"
+          for attempt in 1 2 3; do
+            git push origin HEAD && exit 0
+            git pull --quiet --rebase origin "$GITHUB_REF_NAME"
+          done
+          exit 1
