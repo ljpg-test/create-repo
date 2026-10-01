@@ -2,7 +2,7 @@
 
 Utilitario para crear repositorios `Data-dbs-*` / `lib-dbs-*` desde una plantilla y registrarlos en `workspace.yml`.
 
-`workspace.yml` vive en otro repositorio (por defecto `ljpg-test/lib-dbs-test-cracion`). Este repositorio solo guarda una copia en `data/workspace.yml` para que la página pueda leerla; no la edites a mano, se sobrescribe.
+`workspace.yml` vive en otro repositorio (por defecto `ljpg-test/lib-dbs-test-creacion`). Este repositorio solo guarda una copia en `data/workspace.yml` para que la página pueda leerla; no la edites a mano, se sobrescribe.
 
 ## Cómo funciona
 
@@ -28,8 +28,8 @@ Todas las operaciones sobre la organización y sobre el repositorio de configura
 | Settings → Secrets → Actions (del repositorio o de la organización) | `ORG_ADMIN_TOKEN` | PAT classic con scopes `repo` y `admin:org`: crear repositorios, asignar permisos de equipos y leer/escribir el repositorio de `workspace.yml`. Pega solo el valor (`ghp_...`), sin espacios ni saltos de línea. Si la organización usa SSO, autoriza el token para ella. |
 | Settings → Variables → Actions | `TEMPLATE_REPO` | Repositorio plantilla, `owner/nombre` (o solo `nombre` si está en la organización destino). Debe estar marcado como *Template repository*. |
 | Settings → Variables → Actions | `APROBADORES` *(opcional)* | Usuarios de GitHub que pueden aprobar cerrando el issue, separados por coma. Por defecto `ljpgluisjop`. Deben tener acceso a este repositorio para poder asignarles el issue. |
-| Settings → Variables → Actions | `WORKSPACE_REPO` *(opcional)* | Repositorio donde vive `workspace.yml`. Por defecto `ljpg-test/lib-dbs-test-cracion`. |
-| Settings → Variables → Actions | `WORKSPACE_FILE` / `WORKSPACE_BRANCH` *(opcionales)* | Ruta del archivo (por defecto `workspace.yml`) y rama (por defecto, la rama principal de ese repositorio). |
+| Settings → Variables → Actions | `WORKSPACE_REPO` *(opcional)* | Repositorio donde vive `workspace.yml`. Por defecto `ljpg-test/lib-dbs-test-creacion`. |
+| Settings → Variables → Actions | `WORKSPACE_FILE` / `WORKSPACE_BRANCH` *(opcionales)* | Ruta del archivo (por defecto `data/workspace.yml`) y rama (por defecto, la rama principal de ese repositorio). |
 | Settings → Variables → Actions | `TARGET_ORG` *(opcional)* | Organización donde se crean los repositorios. Por defecto, el dueño de este repositorio. |
 | Settings → Variables → Actions | `NEW_REPO_VISIBILITY` *(opcional)* | `private` (por defecto), `internal` (GitHub Enterprise) o `public`. |
 | Settings → Variables → Actions | `TEAM_PERMISSION` *(opcional)* | Permiso para los equipos (`pull`, `triage`, `push`, `maintain`, `admin`). Por defecto `push` (lectura/escritura). |

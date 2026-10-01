@@ -19,14 +19,14 @@ permissions:
   contents: write
 
 env:
-  WORKSPACE_REPO: ${{ vars.WORKSPACE_REPO || 'ljpg-test/lib-dbs-test-cracion' }}
-  WORKSPACE_FILE: ${{ vars.WORKSPACE_FILE || 'workspace.yml' }}
+  WORKSPACE_REPO: ${{ vars.WORKSPACE_REPO || 'ljpg-test/lib-dbs-test-creacion' }}
+  WORKSPACE_FILE: ${{ vars.WORKSPACE_FILE || 'data/workspace.yml' }}
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Descargar workspace.yml
         env:
@@ -35,7 +35,11 @@ jobs:
         run: |
           ref=${WORKSPACE_BRANCH:+?ref=$WORKSPACE_BRANCH}
           mkdir -p data
-          gh api -H "Accept: application/vnd.github.raw" "repos/$WORKSPACE_REPO/contents/$WORKSPACE_FILE$ref" > data/workspace.yml
+          if ! gh api -H "Accept: application/vnd.github.raw" "repos/$WORKSPACE_REPO/contents/$WORKSPACE_FILE$ref" > "$RUNNER_TEMP/workspace.yml"; then
+            echo "::error::No se pudo leer $WORKSPACE_FILE en $WORKSPACE_REPO${WORKSPACE_BRANCH:+ (rama $WORKSPACE_BRANCH)}. Revisa que el repositorio y la ruta existan (variables WORKSPACE_REPO, WORKSPACE_FILE, WORKSPACE_BRANCH) y que ORG_ADMIN_TOKEN tenga acceso a ese repositorio."
+            exit 1
+          fi
+          mv "$RUNNER_TEMP/workspace.yml" data/workspace.yml
 
       - name: Generar data/config.json
         run: |

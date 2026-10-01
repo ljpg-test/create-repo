@@ -33,8 +33,8 @@ permissions:
 
 env:
   ORG: ${{ vars.TARGET_ORG || github.repository_owner }}
-  WORKSPACE_REPO: ${{ vars.WORKSPACE_REPO || 'ljpg-test/lib-dbs-test-cracion' }}
-  WORKSPACE_FILE: ${{ vars.WORKSPACE_FILE || 'workspace.yml' }}
+  WORKSPACE_REPO: ${{ vars.WORKSPACE_REPO || 'ljpg-test/lib-dbs-test-creacion' }}
+  WORKSPACE_FILE: ${{ vars.WORKSPACE_FILE || 'data/workspace.yml' }}
   APROBADORES: ${{ vars.APROBADORES || 'ljpgluisjop' }}
 
 # Los datos de la solicitud se pasan siempre por variables de entorno (nunca
@@ -56,7 +56,7 @@ jobs:
       workspace: ${{ steps.datos.outputs.workspace }}
       proposito: ${{ steps.datos.outputs.proposito }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Verificar que el solicitante pertenezca a la organización
         if: github.event.action == 'opened'
@@ -138,10 +138,10 @@ jobs:
           fi
           echo "Token válido (usuario: $login)."
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Descargar el repositorio de workspace.yml
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ env.WORKSPACE_REPO }}
           ref: ${{ vars.WORKSPACE_BRANCH }}
@@ -197,10 +197,10 @@ jobs:
       WORKSPACE: ${{ needs.preparar.outputs.workspace }}
       PROPOSITO: ${{ needs.preparar.outputs.proposito }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Descargar el repositorio de workspace.yml
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ env.WORKSPACE_REPO }}
           ref: ${{ vars.WORKSPACE_BRANCH }}
