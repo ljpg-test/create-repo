@@ -14,3 +14,4 @@ environments:
           - lib-dbs-mlops-mcp-tools
           - Data-dbs-test-creacion
           - lib-dbs-test-creacion
+          - lib-dbs-rentacar
