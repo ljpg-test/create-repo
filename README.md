@@ -36,7 +36,7 @@ Todas las operaciones sobre la organización y sobre el repositorio de configura
 | Settings → General → Features | Issues | Deben estar habilitados. |
 | Settings → Pages | — | Publicar desde la rama `main`, carpeta `/ (root)`. |
 
-Si la rama del repositorio de configuración está protegida, el dueño de `ORG_ADMIN_TOKEN` debe poder hacer push en ella.
+Si la rama del repositorio de configuración está protegida, el dueño de `ORG_ADMIN_TOKEN` debe poder hacer push en ella. test 1234
 
 Ten en cuenta que, si este repositorio o su página son públicos, `data/workspace.yml` (URLs de Databricks, AppId, catálogos, nombres de secretos) también lo es.
 
