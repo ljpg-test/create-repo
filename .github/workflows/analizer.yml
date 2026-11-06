@@ -1,0 +1,20 @@
+name: analyzer
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  analyze:
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
+    uses: ljpg-test/analizer/.github/workflows/analyze.yml@4689fd98fe3b3bdef0833918c587794f6d0f9b44 # main, previo a v1.0.0
+    with:
+      # Sin GitHub Code Security en un repo privado, el SARIF queda como artefacto del run.
+      upload-sarif: false
+    secrets:
+      ANALYZER_APP_PRIVATE_KEY: ${{ secrets.ANALYZER_APP_PRIVATE_KEY }}
